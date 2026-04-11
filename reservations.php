@@ -213,6 +213,14 @@ $cart_count = $conn->query("SELECT SUM(quantity) as total FROM cart WHERE user_i
             font-style: italic;
             margin-top: 8px;
         }
+        
+        /* Image Modal */
+        .image-modal { display: none; position: fixed; z-index: 999999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); }
+        .image-modal.show { display: flex; align-items: center; justify-content: center; }
+        .image-modal-content { max-width: 90%; max-height: 90%; border-radius: 12px; box-shadow: 0 10px 50px rgba(0,0,0,0.5); }
+        .image-modal-close { position: absolute; top: 20px; right: 30px; color: white; font-size: 40px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .image-modal-close:hover { color: #f472b6; }
+        .res-image:hover img { transform: scale(1.05); }
     </style>
 </head>
 <body>
@@ -279,7 +287,13 @@ $cart_count = $conn->query("SELECT SUM(quantity) as total FROM cart WHERE user_i
                 
                 <?php while ($res = $reservations->fetch_assoc()): ?>
                     <div class="reservation-item">
-                        <div class="res-image">🌸</div>
+                        <div class="res-image" style="cursor: pointer;" <?php if (!empty($res['image'])): ?>onclick="openImageModal('../<?php echo htmlspecialchars($res['image']); ?>')"<?php endif; ?>>
+                            <?php if (!empty($res['image'])): ?>
+                                <img src="../<?php echo htmlspecialchars($res['image']); ?>" alt="<?php echo htmlspecialchars($res['product_name']); ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px; transition: transform 0.3s ease;">
+                            <?php else: ?>
+                                🌸
+                            <?php endif; ?>
+                        </div>
                         <div class="res-details">
                             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
                                 <h4><?php echo htmlspecialchars($res['product_name']); ?></h4>
@@ -407,7 +421,28 @@ function pollUserData() {
 
 // Start polling every 5 seconds
 setInterval(pollUserData, 5000);
+
+function openImageModal(imageSrc) {
+    document.getElementById('modalImage').src = imageSrc;
+    document.getElementById('imageModal').classList.add('show');
+}
+
+function closeImageModal() {
+    document.getElementById('imageModal').classList.remove('show');
+}
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeImageModal();
+    }
+});
 </script>
+
+<!-- Image Preview Modal -->
+<div id="imageModal" class="image-modal" onclick="closeImageModal()">
+    <span class="image-modal-close" onclick="closeImageModal()">&times;</span>
+    <img class="image-modal-content" id="modalImage" src="" alt="Product Image">
+</div>
 
 </body>
 </html>

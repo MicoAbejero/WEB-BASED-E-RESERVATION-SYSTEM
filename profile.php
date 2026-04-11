@@ -2,7 +2,7 @@
 session_start();
 include '../includes/db.php';
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'admin') {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'customer') {
     header("Location: ../login.php");
     exit();
 }
@@ -57,7 +57,7 @@ if (isset($_POST['change_password'])) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Admin Profile - E-Reserve Admin</title>
+    <title>My Profile - E-Reserve for Crochet Flowers</title>
     <link rel="stylesheet" href="../assets/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -82,7 +82,7 @@ if (isset($_POST['change_password'])) {
             width: 100px;
             height: 100px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            background: linear-gradient(135deg, #f472b6, #c084fc);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -122,7 +122,7 @@ if (isset($_POST['change_password'])) {
         }
         
         .profile-section h3 i {
-            color: #6366f1;
+            color: #f472b6;
         }
         
         .form-row {
@@ -156,8 +156,8 @@ if (isset($_POST['change_password'])) {
         .form-group input:focus,
         .form-group textarea:focus {
             outline: none;
-            border-color: #6366f1;
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+            border-color: #f472b6;
+            box-shadow: 0 0 0 4px rgba(244, 114, 182, 0.15);
         }
         
         .form-group textarea {
@@ -167,7 +167,7 @@ if (isset($_POST['change_password'])) {
         
         .btn-save {
             padding: 14px 32px;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            background: linear-gradient(135deg, #f472b6, #c084fc);
             color: white;
             border: none;
             border-radius: 12px;
@@ -175,12 +175,12 @@ if (isset($_POST['change_password'])) {
             font-weight: 700;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 15px rgba(244, 114, 182, 0.3);
         }
         
         .btn-save:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+            box-shadow: 0 6px 20px rgba(244, 114, 182, 0.4);
         }
         
         .success-message {
@@ -237,6 +237,12 @@ if (isset($_POST['change_password'])) {
             font-size: 15px;
         }
         
+        .divider {
+            height: 1px;
+            background: #e2e8f0;
+            margin: 24px 0;
+        }
+        
         @media (max-width: 600px) {
             .form-row, .account-info {
                 grid-template-columns: 1fr;
@@ -255,11 +261,11 @@ if (isset($_POST['change_password'])) {
 
     <!-- Sidebar -->
     <div class="sidebar">
-        <h2>🌸 Crochet Admin</h2>
-        <a href="dashboard.php"><i class="far fa-chart-bar"></i> Dashboard</a>
-        <a href="customers.php"><i class="fas fa-users"></i> Customers</a>
+        <h2>🌸 Crochet</h2>
+        <a href="dashboard.php"><i class="fas fa-home"></i> Dashboard</a>
         <a href="products.php"><i class="far fa-gem"></i> Products</a>
-        <a href="reservations.php"><i class="fas fa-clipboard-list"></i> Reservations</a>
+        <a href="cart.php"><i class="fas fa-shopping-cart"></i> Cart</a>
+        <a href="reservations.php"><i class="fas fa-clipboard-list"></i> My Reservations</a>
         <a href="pickup_calendar.php"><i class="far fa-calendar-alt"></i> Pickup Calendar</a>
         <a href="profile.php" class="active"><i class="far fa-user"></i> My Profile</a>
         <a href="../logout.php" onclick="return confirm('Are you sure you want to logout?')"><i class="fas fa-sign-out-alt"></i> Logout</a>
@@ -296,7 +302,7 @@ if (isset($_POST['change_password'])) {
                 <div>
                     <h2><?php echo htmlspecialchars($user['name']); ?></h2>
                     <p><?php echo htmlspecialchars($user['email']); ?></p>
-                    <p>Administrator • Member since <?php echo date('F Y', strtotime($user['created_at'])); ?></p>
+                    <p>Member since <?php echo date('F Y', strtotime($user['created_at'])); ?></p>
                 </div>
             </div>
 

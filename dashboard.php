@@ -3,96 +3,41 @@ session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
 
-require_permission('dashboard.admin.view', '../login.php');
+require_permission('dashboard.customer.view', '../login.php');
+
+// Get user info
+$user_id = $_SESSION['user_id'];
+$user_name = $_SESSION['name'];
 
 // Get stats
-$userCount = $conn->query("SELECT COUNT(*) as total FROM users")->fetch_assoc()['total'];
-$productCount = $conn->query("SELECT COUNT(*) as total FROM products")->fetch_assoc()['total'];
-$resCount = $conn->query("SELECT COUNT(*) as total FROM reservations")->fetch_assoc()['total'];
-$pendingCount = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE status = 'pending'")->fetch_assoc()['total'];
+$reservations = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE user_id = $user_id")->fetch_assoc()['total'];
+$pending = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE user_id = $user_id AND status = 'pending'")->fetch_assoc()['total'];
+$completed = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE user_id = $user_id AND status = 'completed'")->fetch_assoc()['total'];
 
-// Get recent reservations
-$recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESCE(p.name, r.product_name_snapshot, 'Deleted Product') as product_name 
-                                   FROM reservations r 
-                                   JOIN users u ON r.user_id = u.id 
-                                   LEFT JOIN products p ON r.product_id = p.id 
-                                   ORDER BY r.created_at DESC LIMIT 5");
+// Get recent notifications (last 5 reservations with status changes)
+$notifications = $conn->query("SELECT r.*, COALESCE(p.name, r.product_name_snapshot, 'Deleted Product') as product_name 
+                              FROM reservations r 
+                              LEFT JOIN products p ON r.product_id = p.id 
+                              WHERE r.user_id = $user_id 
+                              ORDER BY r.created_at DESC LIMIT 5");
+
+// Get pending reservations count
+$pending_count = $pending;
+
+// Get featured products
+$featuredProducts = $conn->query("SELECT * FROM products WHERE stock > 0 ORDER BY created_at DESC LIMIT 3");
+
+// Get cart item count
+$cart_count = $conn->query("SELECT SUM(quantity) as total FROM cart WHERE user_id = $user_id")->fetch_assoc()['total'] ?? 0;
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Admin Dashboard - E-Reserve Admin</title>
+    <title>User Dashboard - E-Reserve for Crochet Flowers</title>
     <link rel="stylesheet" href="../assets/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 24px;
-        }
-        
-        @media (max-width: 1024px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .recent-activity {
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-            border: 1px solid rgba(226, 232, 240, 0.6);
-        }
-        
-        .recent-activity h3 {
-            margin: 0 0 20px 0;
-            color: #1e293b;
-            font-size: 18px;
-            font-weight: 700;
-        }
-        
-        .activity-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 14px;
-            border-radius: 10px;
-            margin-bottom: 10px;
-            background: #f8fafc;
-            transition: all 0.2s ease;
-        }
-        
-        .activity-item:hover {
-            background: #f1f5f9;
-            transform: translateX(4px);
-        }
-        
-        .activity-item .icon {
-            font-size: 24px;
-        }
-        
-        .activity-item .info {
-            flex: 1;
-        }
-        
-        .activity-item .name {
-            font-weight: 600;
-            color: #1e293b;
-            font-size: 14px;
-        }
-        
-        .activity-item .detail {
-            color: #64748b;
-            font-size: 12px;
-        }
-        
-        .activity-item .time {
-            color: #94a3b8;
-            font-size: 11px;
-        }
-        
         .notification-bell {
             position: relative;
             cursor: pointer;
@@ -118,12 +63,6 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
             border-radius: 10px;
             min-width: 18px;
             text-align: center;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
         }
         
         .notification-dropdown {
@@ -139,7 +78,7 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
             overflow: hidden;
             max-height: 450px;
             overflow-y: auto;
-            border: 2px solid #ef4444;
+            border: 2px solid #f472b6;
         }
         
         .notification-dropdown.show {
@@ -148,7 +87,7 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
         
         .notification-header {
             padding: 16px 20px;
-            background: linear-gradient(135deg, #ef4444, #dc2626);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             font-weight: 700;
             display: flex;
@@ -183,9 +122,24 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
             flex-shrink: 0;
         }
         
-        .notification-icon.new {
-            background: linear-gradient(135deg, #fef3c7, #fde68a);
+        .notification-icon.pending {
+            background: #fef3c7;
             color: #d97706;
+        }
+        
+        .notification-icon.confirmed {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+        
+        .notification-icon.completed {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+        
+        .notification-icon.cancelled {
+            background: #fee2e2;
+            color: #dc2626;
         }
         
         .notification-content {
@@ -287,35 +241,6 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
             font-size: 13px;
             color: #64748b;
         }
-        
-        .new-order-alert {
-            background: linear-gradient(135deg, #fef3c7, #fde68a);
-            border-left: 4px solid #f59e0b;
-            padding: 16px 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: slideIn 0.3s ease;
-        }
-        
-        .new-order-alert i {
-            font-size: 24px;
-            color: #d97706;
-        }
-        
-        .new-order-alert h4 {
-            margin: 0;
-            color: #92400e;
-            font-size: 14px;
-        }
-        
-        .new-order-alert p {
-            margin: 4px 0 0 0;
-            color: #a16207;
-            font-size: 13px;
-        }
     </style>
 </head>
 <body>
@@ -326,11 +251,11 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
 
     <!-- Sidebar -->
     <div class="sidebar">
-        <h2>🌸 Crochet Admin</h2>
-        <a href="dashboard.php" class="active"><i class="far fa-chart-bar"></i> Dashboard</a>
-        <a href="customers.php"><i class="fas fa-users"></i> Customers</a>
+        <h2>🌸 Crochet</h2>
+        <a href="dashboard.php" class="active"><i class="fas fa-home"></i> Dashboard</a>
         <a href="products.php"><i class="far fa-gem"></i> Products</a>
-        <a href="reservations.php"><i class="fas fa-clipboard-list"></i> Reservations</a>
+        <a href="cart.php"><i class="fas fa-shopping-cart"></i> Cart</a>
+        <a href="reservations.php"><i class="fas fa-clipboard-list"></i> My Reservations</a>
         <a href="pickup_calendar.php"><i class="far fa-calendar-alt"></i> Pickup Calendar</a>
         <a href="profile.php"><i class="far fa-user"></i> My Profile</a>
         <a href="../logout.php" onclick="return confirm('Are you sure you want to logout?')"><i class="fas fa-sign-out-alt"></i> Logout</a>
@@ -340,151 +265,133 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
     <div class="main">
 
         <div class="topbar">
-            <h1>Welcome, <?php echo htmlspecialchars($_SESSION['name']); ?> 👋</h1>
+            <h1>Welcome, <?php echo htmlspecialchars($user_name); ?> 👋</h1>
             <div class="topbar-right">
-                <div class="live-indicator">
-                    <span class="dot"></span>
-                    Live
-                </div>
-                
                 <!-- Notification Bell -->
                 <div class="notification-bell" onclick="toggleNotifications()">
                     <i class="fas fa-bell"></i>
-                    <?php if ($pendingCount > 0): ?>
-                        <span class="notification-badge"><?php echo $pendingCount; ?></span>
+                    <?php if ($pending_count > 0): ?>
+                        <span class="notification-badge"><?php echo $pending_count; ?></span>
                     <?php endif; ?>
                 </div>
                 
                 <!-- Notification Dropdown -->
                 <div class="notification-dropdown" id="notificationDropdown">
                     <div class="notification-header">
-                        <span><i class="fas fa-bell"></i> Pending Orders</span>
-                        <a href="reservations.php?status=pending" style="color: white; text-decoration: none; font-size: 12px;">View All →</a>
+                        <span><i class="fas fa-bell"></i> Notifications</span>
+                        <a href="reservations.php" style="color: white; text-decoration: none; font-size: 12px;">View All →</a>
                     </div>
-                    <?php 
-                    $pendingReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESCE(p.name, r.product_name_snapshot, 'Deleted Product') as product_name
-                                                      FROM reservations r 
-                                                      JOIN users u ON r.user_id = u.id 
-                                                      LEFT JOIN products p ON r.product_id = p.id
-                                                      WHERE r.status = 'pending'
-                                                      ORDER BY r.created_at DESC LIMIT 5");
-                    ?>
-                    <?php if ($pendingReservations->num_rows > 0): ?>
-                        <?php while ($notif = $pendingReservations->fetch_assoc()): ?>
+                    <?php if ($notifications->num_rows > 0): ?>
+                        <?php while ($notif = $notifications->fetch_assoc()): ?>
                             <div class="notification-item">
-                                <div class="notification-icon new">
-                                    ⏳
+                                <div class="notification-icon <?php echo $notif['status']; ?>">
+                                    <?php 
+                                        switch($notif['status']) {
+                                            case 'pending': echo '⏳'; break;
+                                            case 'confirmed': echo '✅'; break;
+                                            case 'completed': echo '🎉'; break;
+                                            case 'cancelled': echo '❌'; break;
+                                        }
+                                    ?>
                                 </div>
                                 <div class="notification-content">
-                                    <h4><?php echo htmlspecialchars($notif['customer_name']); ?></h4>
+                                    <h4>Order #<?php echo $notif['id']; ?>: <?php echo ucfirst($notif['status']); ?></h4>
                                     <p><?php echo htmlspecialchars($notif['product_name']); ?> (x<?php echo $notif['quantity']; ?>)</p>
-                                    <div class="notification-time">
-                                        <?php echo date('M d, Y - g:i A', strtotime($notif['created_at'])); ?>
-                                    </div>
+                                    <div class="notification-time"><?php echo date('M d, Y - g:i A', strtotime($notif['created_at'])); ?></div>
                                 </div>
                             </div>
                         <?php endwhile; ?>
                     <?php else: ?>
                         <div class="notification-empty">
-                            <i class="fas fa-check-circle"></i>
-                            <p>All caught up!</p>
+                            <i class="fas fa-bell-slash"></i>
+                            <p>No notifications yet</p>
                         </div>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
 
-        <div class="page-header">
-            <h2>📊 Dashboard Overview</h2>
-            <p>Monitor your crochet business at a glance</p>
-        </div>
-
-        <!-- New Order Alert (will be shown dynamically) -->
-        <div id="newOrderAlert" style="display: none;">
-            <div class="new-order-alert">
-                <i class="fas fa-bell"></i>
-                <div>
-                    <h4>🔔 New Order Received!</h4>
-                    <p id="newOrderMessage">A customer just placed a new reservation.</p>
-                </div>
-            </div>
+        <!-- Hero Section -->
+        <div class="hero-section">
+            <h1>🌸 Welcome to E-Reserve!</h1>
+            <p>Your one-stop shop for beautiful handmade crochet flowers</p>
         </div>
 
         <!-- Stats Cards -->
         <div class="cards">
             <div class="card stat-total">
-                <div class="card-icon">👥</div>
-                <h3>Total Users</h3>
-                <p id="stat-users"><?php echo $userCount; ?></p>
-            </div>
-
-            <div class="card stat-confirmed">
-                <div class="card-icon">🧶</div>
-                <h3>Total Products</h3>
-                <p id="stat-products"><?php echo $productCount; ?></p>
+                <div class="card-icon">📋</div>
+                <h3>Total Reservations</h3>
+                <p><?php echo $reservations; ?></p>
             </div>
 
             <div class="card stat-pending">
-                <div class="card-icon">📋</div>
-                <h3>Total Reservations</h3>
-                <p id="stat-reservations"><?php echo $resCount; ?></p>
-            </div>
-            
-            <?php if ($pendingCount > 0): ?>
-            <div class="card stat-cancelled">
                 <div class="card-icon">⏳</div>
                 <h3>Pending Orders</h3>
-                <p id="stat-pending"><?php echo $pendingCount; ?></p>
+                <p><?php echo $pending; ?></p>
             </div>
-            <?php endif; ?>
+
+            <div class="card stat-completed">
+                <div class="card-icon">🎉</div>
+                <h3>Completed Orders</h3>
+                <p><?php echo $completed; ?></p>
+            </div>
         </div>
 
-        <!-- Dashboard Grid -->
-        <div class="dashboard-grid">
-            <!-- Quick Actions -->
-            <div class="feature-card">
-                <h3 style="margin: 0 0 20px 0; color: #1e293b; font-size: 18px; font-weight: 700;">🚀 Quick Actions</h3>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
-                    <a href="products.php" class="action-card" style="padding: 20px;">
-                        <span class="icon" style="font-size: 36px;">🧶</span>
-                        <h3 style="font-size: 14px;">Manage Products</h3>
-                        <p style="font-size: 12px;">Add, edit or remove products</p>
-                    </a>
-                    <a href="reservations.php" class="action-card" style="padding: 20px;">
-                        <span class="icon" style="font-size: 36px;">📋</span>
-                        <h3 style="font-size: 14px;">View Reservations</h3>
-                        <p style="font-size: 12px;">Process customer orders</p>
-                    </a>
-                </div>
-            </div>
+        <!-- Quick Actions -->
+        <div class="section-header">
+            <h2>🚀 Quick Actions</h2>
+        </div>
+        <div class="quick-actions">
+            <a href="products.php" class="action-card">
+                <span class="icon">🌺</span>
+                <h3>Browse Products</h3>
+                <p>View our beautiful crochet flower collection</p>
+            </a>
 
-            <!-- Recent Activity -->
-            <div class="recent-activity">
-                <h3>📈 Recent Activity</h3>
-                <?php if ($recentReservations->num_rows > 0): ?>
-                    <?php while ($res = $recentReservations->fetch_assoc()): ?>
-                        <div class="activity-item">
-                            <div class="icon">
-                                <?php 
-                                    switch($res['status']) {
-                                        case 'pending': echo '⏳';
-                                        case 'confirmed': echo '✅';
-                                        case 'completed': echo '🎉';
-                                        case 'cancelled': echo '❌';
-                                        default: echo '📋';
-                                    }
-                                ?>
-                            </div>
-                            <div class="info">
-                                <div class="name"><?php echo htmlspecialchars($res['customer_name']); ?></div>
-                                <div class="detail"><?php echo htmlspecialchars($res['product_name']); ?> (x<?php echo $res['quantity']; ?>)</div>
-                            </div>
-                            <div class="time"><?php echo date('M d', strtotime($res['created_at'])); ?></div>
-                        </div>
-                    <?php endwhile; ?>
-                <?php else: ?>
-                    <p style="color: #64748b; text-align: center; padding: 20px;">No recent activity</p>
-                <?php endif; ?>
+            <a href="cart.php" class="action-card">
+                <span class="icon">🛒</span>
+                <h3>Shopping Cart</h3>
+                <p>View and manage your cart items</p>
+            </a>
+
+            <a href="reservations.php" class="action-card">
+                <span class="icon">📋</span>
+                <h3>My Reservations</h3>
+                <p>Track your orders and reservations</p>
+            </a>
+        </div>
+
+        <!-- Featured Products -->
+        <?php if ($featuredProducts->num_rows > 0): ?>
+        <div class="section-header" style="margin-top: 50px;">
+            <h2>✨ Featured Products</h2>
+            <a href="products.php" style="color: #f472b6; text-decoration: none; font-weight: 600;">View All →</a>
+        </div>
+        <div class="cards">
+            <?php while ($product = $featuredProducts->fetch_assoc()): ?>
+                <div class="card">
+                    <div class="card-icon">🌸</div>
+                    <h3><?php echo htmlspecialchars($product['name']); ?></h3>
+                    <p style="font-size: 18px; background: linear-gradient(135deg, #f472b6, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">₱<?php echo number_format($product['price'], 2); ?></p>
+                    <p style="font-size: 12px; color: #64748b; margin-top: 8px;">Stock: <?php echo $product['stock']; ?></p>
+                    <a href="products.php" class="btn-update" style="display: inline-block; margin-top: 12px; text-decoration: none;">View Details</a>
+                </div>
+            <?php endwhile; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Tips Section -->
+        <div class="feature-card" style="margin-top: 40px; background: linear-gradient(135deg, #fef3c7, #fde68a);">
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <span style="font-size: 48px;">💡</span>
+                <div>
+                    <h3 style="margin: 0 0 8px 0; color: #92400e;">Order Tips</h3>
+                    <p style="margin: 0; color: #a16207; font-size: 14px; line-height: 1.6;">
+                        Browse our collection, add items to your cart, and select your preferred pickup date. 
+                        Your order will be confirmed once an admin approves it. Track your reservations anytime!
+                    </p>
+                </div>
             </div>
         </div>
 
@@ -493,6 +400,9 @@ $recentReservations = $conn->query("SELECT r.*, u.name as customer_name, COALESC
 </div>
 
 <script>
+// Store last known reservations for change detection
+let lastReservationStates = {};
+
 function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
     dropdown.classList.toggle('show');
@@ -507,6 +417,103 @@ document.addEventListener('click', function(event) {
         dropdown.classList.remove('show');
     }
 });
+
+// Show toast notification
+function showToast(type, title, message) {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    let icon = 'fa-info-circle';
+    if (type === 'success') icon = 'fa-check-circle';
+    if (type === 'warning') icon = 'fa-exclamation-circle';
+    
+    toast.innerHTML = `
+        <div class="toast-icon"><i class="fas ${icon}" style="color: ${type === 'success' ? '#22c55e' : type === 'warning' ? '#f59e0b' : '#3b82f6'}"></i></div>
+        <div class="toast-content">
+            <h4>${title}</h4>
+            <p>${message}</p>
+        </div>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        toast.style.animation = 'slideIn 0.3s ease reverse';
+        setTimeout(() => toast.remove(), 300);
+    }, 5000);
+}
+
+// Poll for reservation status updates
+function pollForUpdates() {
+    fetch('../api_data.php?action=get_user_reservations')
+        .then(response => response.json())
+        .then(data => {
+            if (data.reservations) {
+                data.reservations.forEach(res => {
+                    const key = res.id;
+                    const currentStatus = res.status;
+                    
+                    // Check if this is a new reservation
+                    if (!lastReservationStates[key]) {
+                        lastReservationStates[key] = currentStatus;
+                    }
+                    
+                    // Check if status changed
+                    if (lastReservationStates[key] !== currentStatus && lastReservationStates[key] !== undefined) {
+                        // Status changed! Show toast notification
+                        let title = 'Reservation Updated';
+                        let message = `Order #${res.id} is now ${currentStatus}`;
+                        
+                        if (currentStatus === 'confirmed') {
+                            showToast('success', title, message);
+                        } else if (currentStatus === 'completed') {
+                            showToast('success', '🎉 Order Completed!', message);
+                        } else if (currentStatus === 'cancelled') {
+                            showToast('warning', '⚠️ Order Cancelled', message);
+                        }
+                        
+                        // Update the badge count
+                        updateNotificationBadge();
+                    }
+                    
+                    lastReservationStates[key] = currentStatus;
+                });
+            }
+            
+            // Update notification badge
+            updateNotificationBadge();
+        })
+        .catch(err => console.log('Poll error:', err));
+}
+
+function updateNotificationBadge() {
+    fetch('../api_data.php?action=get_user_reservations')
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.querySelector('.notification-badge');
+            const pending = data.stats ? data.stats.pending : 0;
+            
+            if (pending > 0) {
+                if (badge) {
+                    badge.textContent = pending;
+                } else {
+                    const bell = document.querySelector('.notification-bell');
+                    const newBadge = document.createElement('span');
+                    newBadge.className = 'notification-badge';
+                    newBadge.textContent = pending;
+                    bell.appendChild(newBadge);
+                }
+            } else if (badge) {
+                badge.remove();
+            }
+        })
+        .catch(err => console.log('Badge update error:', err));
+}
+
+// Start polling every 5 seconds
+setInterval(pollForUpdates, 5000);
 </script>
 
 </body>

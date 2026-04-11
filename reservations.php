@@ -3,9 +3,10 @@ session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
 
-require_permission('reservation.manage', '../login.php');
+require_permission('reservation.view_own', '../login.php');
 
-$success = "";
+$user_id = $_SESSION['user_id'];
+$message = "";
 
 // Auto-fix: Check and add missing columns safely
 $columns_to_add = [
@@ -24,116 +25,215 @@ foreach ($columns_to_add as $col_name => $col_def) {
     }
 }
 
-// Handle status update
-if (isset($_POST['update_status'])) {
-    $id = $_POST['reservation_id'];
-    $status = $_POST['status'];
-    $conn->query("UPDATE reservations SET status='$status', last_updated_by=" . (int)$_SESSION['user_id'] . ", last_updated_by_role='admin', last_updated_at=NOW() WHERE id=$id");
-    $success = "✓ Reservation status updated successfully!";
+// Handle cancel reservation
+if (isset($_POST['cancel_reservation'])) {
+    $reservation_id = $_POST['reservation_id'];
+    
+    // Get reservation details first (only allow cancellation for pending orders)
+    $res = $conn->query("SELECT * FROM reservations WHERE id = $reservation_id AND user_id = $user_id AND status = 'pending'");
+    
+    if ($res->num_rows > 0) {
+        $reservation = $res->fetch_assoc();
+        
+        // Restore stock
+        $conn->query("UPDATE products SET stock = stock + {$reservation['quantity']} WHERE id = {$reservation['product_id']}");
+        
+        // Update status with tracking
+        $conn->query("UPDATE reservations SET status = 'cancelled', last_updated_by=$user_id, last_updated_by_role='customer', last_updated_at=NOW() WHERE id = $reservation_id");
+        
+        $message = "✓ Reservation cancelled successfully!";
+    }
 }
 
-// Handle delete
-if (isset($_POST['delete_reservation'])) {
-    $id = $_POST['reservation_id'];
-    $conn->query("DELETE FROM reservations WHERE id=$id");
-    $success = "✓ Reservation deleted successfully!";
-}
-
-// Get reservations with customer info
-$reservations = $conn->query("
-    SELECT r.*, u.name as customer_name, u.email as customer_email, u.phone as customer_phone,
-           COALESCE(p.name, r.product_name_snapshot, 'Deleted Product') as product_name
-    FROM reservations r
-    LEFT JOIN users u ON r.user_id = u.id
-    LEFT JOIN products p ON r.product_id = p.id
-    ORDER BY r.created_at DESC
-");
+// Get reservations
+$reservations = $conn->query("SELECT r.*, 
+                             COALESCE(p.name, r.product_name_snapshot, 'Deleted Product') as product_name,
+                             COALESCE(p.image, r.product_image_snapshot) as image
+                             FROM reservations r 
+                             LEFT JOIN products p ON r.product_id = p.id 
+                             WHERE r.user_id = $user_id 
+                             ORDER BY r.created_at DESC");
 
 // Stats
-$total_reservations = $conn->query("SELECT COUNT(*) as total FROM reservations")->fetch_assoc()['total'];
-$pending = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE status='pending'")->fetch_assoc()['total'];
-$confirmed = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE status='confirmed'")->fetch_assoc()['total'];
-$completed = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE status='completed'")->fetch_assoc()['total'];
-$cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE status='cancelled'")->fetch_assoc()['total'];
+$total_reservations = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE user_id = $user_id")->fetch_assoc()['total'];
+$pending = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE user_id = $user_id AND status = 'pending'")->fetch_assoc()['total'];
+$completed = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE user_id = $user_id AND status = 'completed'")->fetch_assoc()['total'];
+$cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE user_id = $user_id AND status = 'cancelled'")->fetch_assoc()['total'];
+
+// Get cart item count
+$cart_count = $conn->query("SELECT SUM(quantity) as total FROM cart WHERE user_id = $user_id")->fetch_assoc()['total'] ?? 0;
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Reservations Management - E-Reserve Admin</title>
+    <title>My Reservations - E-Reserve for Crochet Flowers</title>
     <link rel="stylesheet" href="../assets/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); min-height: 100vh; }
-        .container { display: flex; min-height: 100vh; }
+        .reservations-list {
+            background: white;
+            border-radius: 20px;
+            padding: 28px;
+            margin-top: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(226, 232, 240, 0.6);
+        }
         
-        /* Sidebar */
-        .sidebar { width: 260px; height: 100vh; background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%); color: white; position: fixed; padding-top: 20px; box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15); }
-        .sidebar h2 { text-align: center; margin-bottom: 30px; font-size: 24px; }
-        .sidebar a { display: flex; align-items: center; gap: 12px; padding: 14px 24px; color: #94a3b8; text-decoration: none; transition: all 0.3s ease; border-left: 4px solid transparent; font-size: 15px; }
-        .sidebar a:hover { background: linear-gradient(90deg, #334155 0%, transparent 100%); color: #ffffff; border-left: 4px solid #f472b6; padding-left: 28px; }
-        .sidebar a.active { background: linear-gradient(90deg, #334155 0%, transparent 100%); border-left: 4px solid #f472b6; color: white; }
+        .reservations-list h3 {
+            margin: 0 0 24px 0;
+            color: #1e293b;
+            font-size: 20px;
+            font-weight: 700;
+        }
         
-        /* Main */
-        .main { margin-left: 260px; padding: 30px 40px; width: 100%; }
+        .reservation-item {
+            display: flex;
+            gap: 24px;
+            padding: 24px;
+            border-bottom: 1px solid #f1f5f9;
+            transition: all 0.2s ease;
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
         
-        .topbar { background: white; padding: 20px 28px; margin-bottom: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06); display: flex; align-items: center; justify-content: space-between; }
-        .topbar h1 { margin: 0; font-size: 24px; font-weight: 600; color: #1e293b; }
+        .reservation-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
         
-        .page-header { margin-bottom: 30px; }
-        .page-header h2 { margin: 0 0 10px 0; font-size: 28px; color: #1e293b; font-weight: 700; }
-        .page-header p { margin: 0; color: #64748b; font-size: 15px; }
+        .reservation-item:hover {
+            background: linear-gradient(90deg, #fdf2f8 0%, #faf5ff 100%);
+        }
         
-        .success-message { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; padding: 18px 24px; border-radius: 12px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; font-weight: 500; box-shadow: 0 4px 15px rgba(34, 197, 94, 0.2); }
+        .res-image {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #fbcfe8 100%);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+            flex-shrink: 0;
+        }
         
-        /* Cards */
-        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin-bottom: 30px; }
-        .card { background: white; padding: 28px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); border: 1px solid rgba(226, 232, 240, 0.6); }
-        .card .card-icon { font-size: 40px; margin-bottom: 16px; }
-        .card h3 { margin: 0; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
-        .card p { font-size: 32px; font-weight: 800; margin: 12px 0 0 0; color: #1e293b; }
+        .res-details {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
         
-        /* Table */
-        .reservations-table { width: 100%; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); border: 1px solid rgba(226, 232, 240, 0.6); margin-top: 24px; }
-        .reservations-table table { width: 100%; border-collapse: collapse; }
-        .reservations-table th { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); padding: 18px 16px; text-align: left; color: #475569; font-weight: 700; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
-        .reservations-table td { padding: 18px 16px; border-bottom: 1px solid #f1f5f9; font-size: 14px; color: #334155; }
-        .reservations-table tbody tr:hover { background: linear-gradient(90deg, #fdf2f8 0%, #faf5ff 100%); }
+        .res-details h4 {
+            margin: 0;
+            color: #1e293b;
+            font-size: 20px;
+            font-weight: 700;
+        }
         
-        .customer-info { line-height: 1.6; }
-        .customer-info .name { font-weight: 700; color: #1e293b; font-size: 14px; }
-        .customer-info .email { color: #64748b; font-size: 12px; }
+        .res-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
         
-        .status-badge { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
-        .status-pending { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #b45309; }
-        .status-confirmed { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #1d4ed8; }
-        .status-completed { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; }
-        .status-cancelled { background: linear-gradient(135deg, #fee2e2, #fecaca); color: #dc2626; }
+        .meta-item {
+            font-size: 14px;
+        }
         
-        .action-form { display: flex; gap: 8px; align-items: center; }
-        .action-form select { padding: 8px 12px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
-        .action-form select:focus { outline: none; border-color: #f472b6; box-shadow: 0 0 0 3px rgba(244, 114, 182, 0.2); }
+        .meta-item .label {
+            color: #64748b;
+        }
         
-        .btn-update { padding: 8px 16px; background: linear-gradient(135deg, #f472b6, #c084fc); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.3s ease; }
-        .btn-update:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(244, 114, 182, 0.4); }
+        .meta-item .value {
+            color: #1e293b;
+            font-weight: 600;
+        }
         
-        .btn-delete { padding: 8px 16px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.3s ease; }
-        .btn-delete:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4); }
+        .res-total {
+            font-size: 22px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #f472b6, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
         
-        .price-col { font-weight: 700; color: #7c3aed; font-size: 15px; }
-        .notes-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; font-size: 13px; }
+        .res-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        
+        .btn-cancel {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #fee2e2, #fecaca);
+            color: #dc2626;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-cancel:hover {
+            background: linear-gradient(135deg, #fecaca, #fca5a5);
+            transform: translateY(-2px);
+        }
+        
+        .btn-cancel:disabled {
+            background: #f1f5f9;
+            color: #94a3b8;
+            cursor: not-allowed;
+        }
+        
+        .btn-browse {
+            display: inline-block;
+            padding: 14px 32px;
+            background: linear-gradient(135deg, #f472b6, #c084fc);
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            margin-top: 24px;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(244, 114, 182, 0.3);
+        }
+        
+        .btn-browse:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(244, 114, 182, 0.4);
+        }
+        
+        .notes-text {
+            color: #64748b;
+            font-size: 14px;
+            font-style: italic;
+            margin-top: 8px;
+        }
+        
+        /* Image Modal */
+        .image-modal { display: none; position: fixed; z-index: 999999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); }
+        .image-modal.show { display: flex; align-items: center; justify-content: center; }
+        .image-modal-content { max-width: 90%; max-height: 90%; border-radius: 12px; box-shadow: 0 10px 50px rgba(0,0,0,0.5); }
+        .image-modal-close { position: absolute; top: 20px; right: 30px; color: white; font-size: 40px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .image-modal-close:hover { color: #f472b6; }
+        .res-image:hover img { transform: scale(1.05); }
     </style>
 </head>
 <body>
 
 <div class="container">
+
     <!-- Sidebar -->
     <div class="sidebar">
-        <h2>🌸 Crochet Admin</h2>
-        <a href="dashboard.php"><i class="far fa-chart-bar"></i> Dashboard</a>
-        <a href="customers.php"><i class="fas fa-users"></i> Customers</a>
+        <h2>🌸 Crochet</h2>
+        <a href="dashboard.php"><i class="fas fa-home"></i> Dashboard</a>
         <a href="products.php"><i class="far fa-gem"></i> Products</a>
-        <a href="reservations.php" class="active"><i class="fas fa-clipboard-list"></i> Reservations</a>
+        <a href="cart.php"><i class="fas fa-shopping-cart"></i> Cart</a>
+        <a href="reservations.php" class="active"><i class="fas fa-clipboard-list"></i> My Reservations</a>
         <a href="pickup_calendar.php"><i class="far fa-calendar-alt"></i> Pickup Calendar</a>
         <a href="profile.php"><i class="far fa-user"></i> My Profile</a>
         <a href="../logout.php" onclick="return confirm('Are you sure you want to logout?')"><i class="fas fa-sign-out-alt"></i> Logout</a>
@@ -141,130 +241,218 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
 
     <!-- Main Content -->
     <div class="main">
+
         <div class="topbar">
-            <h1>Welcome, <?php echo htmlspecialchars($_SESSION['name']); ?> 👋</h1>
-            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #22c55e; font-weight: 500;">
-                <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 2s infinite;"></span>
-                Live
-            </div>
+            <h1>📋 My Reservations</h1>
         </div>
 
-        <?php if ($success): ?>
-            <div class="success-message"><?php echo $success; ?></div>
+        <?php if ($message): ?>
+            <div class="success-message" style="background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; padding: 18px 24px; border-radius: 12px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; font-weight: 500; box-shadow: 0 4px 15px rgba(34, 197, 94, 0.2);">
+                <span style="font-size: 24px;">🎉</span>
+                <?php echo $message; ?>
+            </div>
         <?php endif; ?>
 
         <div class="page-header">
-            <h2>📋 Reservations Management</h2>
-            <p>View and manage customer reservations</p>
+            <h2>Track Your Orders</h2>
+            <p>View and manage your reservations</p>
         </div>
 
         <div class="cards">
-            <div class="card">
+            <div class="card stat-total">
                 <div class="card-icon">📋</div>
                 <h3>Total Reservations</h3>
-                <p><?php echo $total_reservations; ?></p>
+                <p id="stat-total"><?php echo $total_reservations; ?></p>
             </div>
-            <div class="card">
+            <div class="card stat-pending">
                 <div class="card-icon">⏳</div>
                 <h3>Pending</h3>
-                <p><?php echo $pending; ?></p>
+                <p id="stat-pending"><?php echo $pending; ?></p>
             </div>
-            <div class="card">
-                <div class="card-icon">✅</div>
-                <h3>Confirmed</h3>
-                <p><?php echo $confirmed; ?></p>
-            </div>
-            <div class="card">
+            <div class="card stat-completed">
                 <div class="card-icon">🎉</div>
                 <h3>Completed</h3>
-                <p><?php echo $completed; ?></p>
+                <p id="stat-completed"><?php echo $completed; ?></p>
             </div>
-            <div class="card">
+            <div class="card" style="background: linear-gradient(135deg, #fee2e2, #fecaca);">
                 <div class="card-icon">❌</div>
                 <h3>Cancelled</h3>
                 <p><?php echo $cancelled; ?></p>
             </div>
         </div>
 
-        <div class="reservations-table">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Customer</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>Total</th>
-                        <th>Pickup Date</th>
-                        <th>Status</th>
-                        <th>Last Updated</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php while ($row = $reservations->fetch_assoc()): ?>
-                        <tr>
-                            <td>
-                                <div class="customer-info">
-                                    <div class="name"><?php echo htmlspecialchars($row['customer_name'] ?? 'Unknown'); ?></div>
-                                    <div class="email"><?php echo htmlspecialchars($row['customer_email'] ?? ''); ?></div>
-                                </div>
-                            </td>
-                            <td><?php echo htmlspecialchars($row['product_name'] ?? 'Unknown'); ?></td>
-                            <td><?php echo (int)$row['quantity']; ?></td>
-                            <td class="price-col">₱<?php echo number_format($row['total_amount'], 2); ?></td>
-                            <td>
-                                <?php
-                                $pickupDate = $row['pickup_date'] ?? null;
-                                if (empty($pickupDate) || $pickupDate === '0000-00-00') {
-                                    $pickupDate = !empty($row['reservation_date']) ? date('Y-m-d', strtotime($row['reservation_date'] . ' +3 days')) : null;
-                                }
-
-                                if (!empty($pickupDate)) {
-                                    echo date('M d, Y', strtotime($pickupDate));
-                                } else {
-                                    echo '<span style="color: #94a3b8;">N/A</span>';
-                                }
-                                ?>
-                            </td>
-                            <td>
-                                <span class="status-badge status-<?php echo $row['status']; ?>">
-                                    <?php echo ucfirst($row['status']); ?>
+        <?php if ($reservations->num_rows > 0): ?>
+            <div class="reservations-list">
+                <h3>📋 Reservation History</h3>
+                
+                <?php while ($res = $reservations->fetch_assoc()): ?>
+                    <div class="reservation-item">
+                        <div class="res-image" style="cursor: pointer;" <?php if (!empty($res['image'])): ?>onclick="openImageModal('../<?php echo htmlspecialchars($res['image']); ?>')"<?php endif; ?>>
+                            <?php if (!empty($res['image'])): ?>
+                                <img src="../<?php echo htmlspecialchars($res['image']); ?>" alt="<?php echo htmlspecialchars($res['product_name']); ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px; transition: transform 0.3s ease;">
+                            <?php else: ?>
+                                🌸
+                            <?php endif; ?>
+                        </div>
+                        <div class="res-details">
+                            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                                <h4><?php echo htmlspecialchars($res['product_name']); ?></h4>
+                                <span class="status-badge status-<?php echo $res['status']; ?>">
+                                    <?php echo ucfirst($res['status']); ?>
                                 </span>
-                            </td>
-                            <td>
-                                <?php if (!empty($row['last_updated_by_role'])): ?>
-                                    <div style="font-size: 12px; color: #64748b;">
-                                        <?php if ($row['last_updated_by_role'] === 'admin'): ?>
-                                            <span style="color: #6366f1; font-weight: 600;">👑 Admin</span> updated
-                                        <?php else: ?>
-                                            <span style="color: #f472b6; font-weight: 600;">👤 Customer</span> updated
-                                        <?php endif; ?>
-                                        <div style="font-size: 11px; color: #94a3b8;">
-                                            <?php echo !empty($row['last_updated_at']) ? date('M d, Y h:i A', strtotime($row['last_updated_at'])) : ''; ?>
-                                        </div>
-                                    </div>
-                                <?php else: ?>
-                                    <span style="color: #94a3b8; font-size: 12px;">Not updated yet</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <form method="POST" style="display:inline;">
-                                    <input type="hidden" name="reservation_id" value="<?php echo $row['id']; ?>">
-                                    <select name="status" onchange="this.form.submit()" style="padding: 6px 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; <?php echo $row['status'] == 'cancelled' ? 'opacity: 0.5;' : ''; ?>" <?php echo $row['status'] == 'cancelled' ? 'disabled' : ''; ?>>
-                                        <option value="pending" <?php echo $row['status'] == 'pending' ? 'selected' : ''; ?>>Pending</option>
-                                        <option value="confirmed" <?php echo $row['status'] == 'confirmed' ? 'selected' : ''; ?>>Confirmed</option>
-                                        <option value="completed" <?php echo $row['status'] == 'completed' ? 'selected' : ''; ?>>Completed</option>
-                                        <option value="cancelled" <?php echo $row['status'] == 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
-                                    </select>
-                                    <input type="hidden" name="update_status" value="1">
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endwhile; ?>
-                </tbody>
-            </table>
-        </div>
+                            </div>
+                            
+                            <div class="res-meta">
+                                <div class="meta-item">
+                                    <span class="label">Quantity:</span>
+                                    <span class="value"><?php echo $res['quantity']; ?></span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="label">Reserved:</span>
+                                    <span class="value"><?php echo date('M d, Y', strtotime($res['reservation_date'])); ?></span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="label">Pickup Date:</span>
+                                    <span class="value">
+                                        <?php
+                                        $pickupDate = $res['pickup_date'] ?? null;
+                                        if (empty($pickupDate) || $pickupDate === '0000-00-00') {
+                                            $pickupDate = !empty($res['reservation_date']) ? date('Y-m-d', strtotime($res['reservation_date'] . ' +3 days')) : null;
+                                        }
+                                        echo !empty($pickupDate) ? date('M d, Y', strtotime($pickupDate)) : 'N/A';
+                                        ?>
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <div class="res-total">Total: ₱<?php echo number_format($res['total_amount'], 2); ?></div>
+                            
+                            <?php if ($res['notes']): ?>
+                                <p class="notes-text">
+                                    <strong>Notes:</strong> <?php echo htmlspecialchars($res['notes']);?>
+                                </p>
+                            <?php endif; ?>
+                            
+                            <?php if (!empty($res['last_updated_by_role'])): ?>
+                                <p style="font-size: 12px; color: #64748b; margin: 8px 0 0 0;">
+                                    <?php if ($res['last_updated_by_role'] === 'admin'): ?>
+                                        👑 <strong style="color: #6366f1;">Admin</strong> updated this order
+                                    <?php else: ?>
+                                        👤 <strong style="color: #f472b6;">You</strong> updated this order
+                                    <?php endif; ?>
+                                    <span style="color: #94a3b8;">
+                                        - <?php echo !empty($res['last_updated_at']) ? date('M d, Y h:i A', strtotime($res['last_updated_at'])) : ''; ?>
+                                    </span>
+                                </p>
+                            <?php endif; ?>
+                            
+                            <?php if ($res['status'] === 'pending'): ?>
+                                <div class="res-actions">
+                                    <button class="btn-cancel" onclick="cancelReservation(<?php echo $res['id']; ?>)">Cancel Reservation</button>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endwhile; ?>
+            </div>
+        <?php else: ?>
+            <div class="empty-state">
+                <div class="icon">📋</div>
+                <h2>No Reservations Yet</h2>
+                <p>You haven't made any reservations yet. Start shopping to create your first reservation!</p>
+                <a href="products.php" class="btn-browse">🛍️ Browse Products</a>
+            </div>
+        <?php endif; ?>
+
     </div>
+
+</div>
+
+<script>
+function cancelReservation(reservationId) {
+    if (!confirm("⚠️ Are you sure you want to CANCEL this reservation?\n\nThis will restore the product to stock.\n\nThis action cannot be undone!\n\nClick OK to confirm cancellation.")) return;
+    
+    const formData = new FormData();
+    formData.append('action', 'cancel_reservation');
+    formData.append('reservation_id', reservationId);
+    
+    fetch('../api.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response error');
+        }
+        return response.text();
+    })
+    .then(text => {
+        try {
+            const data = JSON.parse(text);
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        } catch (e) {
+            alert('Server error: Invalid JSON response');
+            console.log('Raw response:', text);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+// Poll for status updates every 5 seconds
+function pollUserData() {
+    fetch('../api_data.php?action=get_user_reservations')
+        .then(response => response.json())
+        .then(data => {
+            if (data.stats) {
+                document.getElementById('stat-total').textContent = data.stats.total;
+                document.getElementById('stat-pending').textContent = data.stats.pending;
+                document.getElementById('stat-completed').textContent = data.stats.completed;
+            }
+            
+            // Check for status changes
+            if (data.reservations) {
+                data.reservations.forEach(res => {
+                    const badge = document.querySelector(`.status-badge[data-id="${res.id}"]`);
+                    if (badge && badge.textContent.toLowerCase() !== res.status) {
+                        // Status changed - reload page
+                        location.reload();
+                    }
+                });
+            }
+        })
+        .catch(err => console.log('Poll error:', err));
+}
+
+// Start polling every 5 seconds
+setInterval(pollUserData, 5000);
+
+function openImageModal(imageSrc) {
+    document.getElementById('modalImage').src = imageSrc;
+    document.getElementById('imageModal').classList.add('show');
+}
+
+function closeImageModal() {
+    document.getElementById('imageModal').classList.remove('show');
+}
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeImageModal();
+    }
+});
+</script>
+
+<!-- Image Preview Modal -->
+<div id="imageModal" class="image-modal" onclick="closeImageModal()">
+    <span class="image-modal-close" onclick="closeImageModal()">&times;</span>
+    <img class="image-modal-content" id="modalImage" src="" alt="Product Image">
 </div>
 
 </body>

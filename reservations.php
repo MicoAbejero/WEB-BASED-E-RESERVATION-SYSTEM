@@ -370,7 +370,7 @@ $cart_count = $conn->query("SELECT SUM(quantity) as total FROM cart WHERE user_i
 
 <script>
 function cancelReservation(reservationId) {
-    if (!confirm('⚠️ Are you sure you want to CANCEL this reservation?\n\nThis will restore the product to stock.\n\nThis action cannot be undone!\n\nClick OK to confirm cancellation.')) return;
+    if (!confirm("⚠️ Are you sure you want to CANCEL this reservation?\n\nThis will restore the product to stock.\n\nThis action cannot be undone!\n\nClick OK to confirm cancellation.")) return;
     
     const formData = new FormData();
     formData.append('action', 'cancel_reservation');
@@ -380,13 +380,24 @@ function cancelReservation(reservationId) {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(data.message);
-            location.reload();
-        } else {
-            alert(data.message);
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response error');
+        }
+        return response.text();
+    })
+    .then(text => {
+        try {
+            const data = JSON.parse(text);
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        } catch (e) {
+            alert('Server error: Invalid JSON response');
+            console.log('Raw response:', text);
         }
     })
     .catch(error => {

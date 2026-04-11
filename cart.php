@@ -145,8 +145,21 @@ if (isset($_POST['checkout'])) {
                         $product_image_snapshot = $item['image'] ?? '';
                         $insert_stmt = $conn->prepare("INSERT INTO reservations (user_id, product_id, quantity, reservation_date, pickup_date, total_amount, notes, status, product_name_snapshot, product_image_snapshot, variation_id, variation_name, unit_price) VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'pending', ?, ?, ?, ?, ?)");
                         // Types: i,i,i,s,d,s,s,s,i,s,d
-                        $insert_stmt->bind_param("iiisdssssisd", $user_id, $product_id, $quantity, $pickup_date_escaped, $subtotal, $notes_escaped, $product_name_snapshot, $product_image_snapshot, $item['variation_id'], $variation_name, $unit_price);
-                        $insert_stmt->execute();
+                        $insert_stmt->bind_param(
+                            "iiisdsssisd",
+                            $user_id,
+                            $product_id,
+                            $quantity,
+                            $pickup_date_escaped,
+                            $subtotal,
+                            $notes_escaped,
+                            $product_name_snapshot,
+                            $product_image_snapshot,
+                            $item['variation_id'],
+                            $variation_name,
+                            $unit_price
+                        );
+                        @$insert_stmt->execute();
                         $insert_stmt->close();
                         
                         // Update stock using prepared statement
@@ -571,7 +584,7 @@ function renderPickupCalendar() {
         const isToday = checkDate.getTime() === today.getTime();
         const avail = getAvailabilityStatus(dateStr);
         
-        if (isPast || isToday) {
+        if (isPast) {
             dayEl.classList.add('disabled');
             dayEl.innerHTML = `<span class="pickup-day-number">${day}</span>`;
         } else if (avail.status === 'full') {
@@ -587,7 +600,7 @@ function renderPickupCalendar() {
         
         if (dateStr === selectedPickupDate) dayEl.classList.add('selected');
         
-        if (!isPast && !isToday && avail.status !== 'full') {
+        if (!isPast && avail.status !== 'full') {
             dayEl.onclick = () => selectPickupDate(dateStr);
         }
         
@@ -632,6 +645,13 @@ function selectPickupDate(dateStr) {
 }
 
 renderPickupCalendar();
+
+// Initialize button state properly on page load
+const initialAvail = getAvailabilityStatus(selectedPickupDate);
+const initialBtn = document.getElementById('checkoutBtn');
+initialBtn.disabled = initialAvail.status === 'full';
+initialBtn.textContent = initialAvail.status === 'full' ? '🚫 Date Fully Booked' : '✓ Reserve Now';
+
 selectPickupDate(selectedPickupDate);
 </script>
 

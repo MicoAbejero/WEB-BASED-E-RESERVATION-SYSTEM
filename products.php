@@ -3,6 +3,18 @@ session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
 
+// AJAX endpoint for loading variations
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'variations' && isset($_GET['product_id'])) {
+    $pid = (int)$_GET['product_id'];
+    $result = $conn->query("SELECT * FROM product_variations WHERE product_id = $pid ORDER BY is_default DESC, price ASC");
+    $vars = [];
+    while ($row = $result->fetch_assoc()) {
+        $vars[] = $row;
+    }
+    header('Content-Type: application/json');
+    echo json_encode($vars);
+    exit;
+}
 require_permission('product.manage', '../login.php');
 
 $message = "";
@@ -468,9 +480,9 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
         .product-image-cell:hover img { transform: scale(1.1); }
 
         /* Variations UI */
-        .variations-section { margin-top: 24px; }
+.variations-section { margin-top: 0; }
         .variations-section h3 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; }
-        .variation-add-form { background: #f8fafc; border-radius: 14px; padding: 20px; border: 2px dashed #e2e8f0; margin-bottom: 20px; }
+.variation-add-form { background: #f8fafc; border-radius: 14px; padding: 20px; border: 2px dashed #e2e8f0; margin-bottom: 20px; }
         .variation-add-form h4 { margin: 0 0 14px 0; font-size: 14px; color: #475569; font-weight: 600; }
         .variation-add-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
         .variation-add-row .form-group { margin-bottom: 0; }
@@ -492,7 +504,7 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
         .btn-del-variation { padding: 6px 12px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; }
         .btn-del-variation:hover { transform: translateY(-1px); }
         
-        .no-variations { text-align: center; padding: 30px; color: #94a3b8; font-size: 14px; background: #f8fafc; border-radius: 12px; border: 2px dashed #e2e8f0; }
+.no-variations { text-align: center; padding: 30px; color: #94a3b8; font-size: 14px; background: #f8fafc; border-radius: 12px; border: 2px dashed #e2e8f0; }
         .no-variations i { font-size: 32px; display: block; margin-bottom: 8px; }
 
         .variation-count-badge { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
@@ -698,10 +710,10 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
             <hr style="border: none; border-top: 2px dashed #e2e8f0; margin: 24px 0;">
             
             <!-- Product Variations Section in Add Form -->
-            <div class="variations-section">
+            <div>
                 <h3><i class="fas fa-palette"></i> Product Sizes / Variations <span style="font-size: 13px; color: #94a3b8; font-weight: normal;">(Optional - add if product has different sizes/prices)</span></h3>
                 
-                <div class="variation-add-form" style="margin-top: 16px;">
+                <div class="variation-add-form">
                     <h4>➕ Add Size / Variation</h4>
                     <div class="variation-add-row">
                         <div class="form-group">
@@ -717,7 +729,7 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
                 </div>
                 
                 <div class="variations-list" id="tempVariationsList">
-                    <div class="no-variations" style="margin-top: 12px;"><i class="fas fa-tags"></i>No sizes added yet. You can add sizes later if needed.</div>
+                    <div class="no-variations"><i class="fas fa-tags"></i>No sizes added yet. You can add sizes later if needed.</div>
                 </div>
                 
                 <input type="hidden" name="variations_json" id="variations_json" value="">
@@ -784,10 +796,10 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
             <hr style="border: none; border-top: 2px dashed #e2e8f0; margin: 24px 0;">
             
             <!-- Product Variations Section in Edit Form -->
-            <div class="variations-section">
+            <div>
                 <h3><i class="fas fa-palette"></i> Product Sizes / Variations</h3>
                 
-                <div class="variation-add-form" style="margin-top: 16px;">
+                <div class="variation-add-form">
                     <h4>➕ Add Size / Variation</h4>
                     <div class="variation-add-row">
                         <div class="form-group">
@@ -803,7 +815,7 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
                 </div>
                 
                 <div class="variations-list" id="editVariationsList">
-                    <div class="no-variations" style="margin-top: 12px;"><i class="fas fa-tags"></i>Loading sizes...</div>
+                    <div class="no-variations"><i class="fas fa-tags"></i>Loading sizes...</div>
                 </div>
                 
                 <input type="hidden" name="edit_variations_json" id="edit_variations_json" value="">
@@ -839,7 +851,7 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
                     </div>
                     <button type="submit" name="add_variation" class="btn-add-variation">+ Add</button>
                 </div>
-                <div style="margin-top: 12px;">
+                <div>
                     <div class="checkbox-group">
                         <input type="checkbox" name="is_default" id="var_is_default">
                         <label for="var_is_default">Set as default selection</label>
@@ -849,7 +861,7 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
         </div>
 
         <!-- Existing Variations List -->
-        <div class="variations-section">
+        <div>
             <h3><i class="fas fa-list"></i> Current Variations <span id="varCountBadge"></span></h3>
             <div class="variations-list" id="variationsList">
                 <div class="no-variations"><i class="fas fa-tags"></i>No variations yet. Add one above!</div>
@@ -1075,7 +1087,7 @@ function renderTempVariations() {
     const list = document.getElementById('tempVariationsList');
     
     if (tempVariations.length === 0) {
-        list.innerHTML = '<div class="no-variations" style="margin-top: 12px;"><i class="fas fa-tags"></i>No sizes added yet. You can add sizes later if needed.</div>';
+        list.innerHTML = '<div class="no-variations"><i class="fas fa-tags"></i>No sizes added yet. You can add sizes later if needed.</div>';
         return;
     }
     
@@ -1115,36 +1127,52 @@ let editTempVariations = [];
 let currentEditingProductId = null;
 
 // Extend editProduct to load existing variations
-const originalEditProduct = editProduct;
-editProduct = function(product) {
-    originalEditProduct(product);
-    currentEditingProductId = product.id;
+function editProduct(product) {
+    document.getElementById('edit_id').value = product.id;
+    document.getElementById('edit_name').value = product.name;
+    document.getElementById('edit_description').value = product.description || '';
+    document.getElementById('edit_price').value = product.price;
+    document.getElementById('edit_category').value = product.category;
+    document.getElementById('edit_stock').value = product.stock;
+    document.getElementById('edit_available').checked = product.is_available == 1;
+
+    document.getElementById('edit_product_image').value = '';
+    document.getElementById('edit_preview_container').style.display = 'none';
+
+    // current image
+    if (product.image) {
+        document.getElementById('current_image_container').style.display = 'block';
+        document.getElementById('current_image_preview').src = '../' + product.image;
+    } else {
+        document.getElementById('current_image_container').style.display = 'none';
+    }
+
+    // reset variations first
     editTempVariations = [];
-    
-    // Make sure variations list container shows loading
-    document.getElementById('editVariationsList').innerHTML = '<div class="no-variations" style="margin-top: 12px;"><i class="fas fa-sync fa-spin"></i> Loading sizes...</div>';
-    
-    // Load existing variations from server
+    document.getElementById('editVariationsList').innerHTML =
+        '<div class="no-variations"><i class="fas fa-sync fa-spin"></i> Loading sizes...</div>';
+
+    document.getElementById('editModal').classList.add('show');
+
+    // load variations AFTER modal opens
     fetch('?ajax=variations&product_id=' + product.id)
         .then(r => r.json())
         .then(data => {
-            if (data && Array.isArray(data) && data.length > 0) {
-                editTempVariations = data.map(v => ({
-                    id: v.id,
-                    label: v.variation_label,
-                    price: parseFloat(v.price),
-                    is_default: parseInt(v.is_default),
-                    existing: true
-                }));
-            }
+            editTempVariations = data.map(v => ({
+                id: v.id,
+                label: v.variation_label,
+                price: parseFloat(v.price),
+                is_default: parseInt(v.is_default),
+                existing: true
+            }));
+
             renderEditTempVariations();
-            document.getElementById('edit_variations_json').value = JSON.stringify(editTempVariations);
+            document.getElementById('edit_variations_json').value =
+                JSON.stringify(editTempVariations);
         })
-        .catch(err => {
-            // Fallback if AJAX fails
+        .catch(() => {
             editTempVariations = [];
             renderEditTempVariations();
-            document.getElementById('edit_variations_json').value = '[]';
         });
 }
 
@@ -1196,7 +1224,7 @@ function renderEditTempVariations() {
     const list = document.getElementById('editVariationsList');
     
     if (editTempVariations.length === 0) {
-        list.innerHTML = '<div class="no-variations" style="margin-top: 12px;"><i class="fas fa-tags"></i>No sizes added yet. You can add sizes here.</div>';
+        list.innerHTML = '<div class="no-variations"><i class="fas fa-tags"></i>No sizes added yet. You can add sizes here.</div>';
         return;
     }
     
@@ -1214,21 +1242,12 @@ function renderEditTempVariations() {
         </div>
     `).join('');
 }
+
+
 </script>
 
 <?php
-// AJAX endpoint for loading variations
-if (isset($_GET['ajax']) && $_GET['ajax'] === 'variations' && isset($_GET['product_id'])) {
-    $pid = (int)$_GET['product_id'];
-    $result = $conn->query("SELECT * FROM product_variations WHERE product_id = $pid ORDER BY is_default DESC, price ASC");
-    $vars = [];
-    while ($row = $result->fetch_assoc()) {
-        $vars[] = $row;
-    }
-    header('Content-Type: application/json');
-    echo json_encode($vars);
-    exit;
-}
+
 ?>
 
 <!-- Image Preview Modal -->

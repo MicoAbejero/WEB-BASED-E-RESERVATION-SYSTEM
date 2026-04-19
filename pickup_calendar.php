@@ -677,7 +677,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'calendar_data') {
                 <input type="hidden" name="update_date_limit" value="1">
                 <input type="hidden" name="pickup_date" id="limitDateInput" value="">
                 <label>Maximum reservations:</label>
-                <input type="number" name="max_reservations" id="limitInput" value="5" min="1" max="50">
+                <input type="number" name="max_reservations" id="limitInput" value="5" min="0" max="50">
                 <button type="submit" id="updateBtn">Update Limit</button>
             </form>
             <p style="margin: 12px 0 0 0; color: #64748b; font-size: 13px;">

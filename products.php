@@ -160,7 +160,15 @@ if (isset($_POST['update_product'])) {
     $current_product = $conn->query("SELECT image FROM products WHERE id = $id")->fetch_assoc();
     $current_image = $current_product['image'] ?? '';
 
-    if (isset($_FILES['edit_product_image']) && $_FILES['edit_product_image']['error'] == 0) {
+    // Handle image removal
+    if (isset($_POST['remove_current_image']) && $_POST['remove_current_image'] == '1') {
+        $image_update = ", image = ''";
+        if (!empty($current_image) && strpos($current_image, 'assets/images/products/') === 0 && file_exists('../' . $current_image)) {
+            unlink('../' . $current_image);
+        }
+    } 
+    // Handle new image upload
+    else if (isset($_FILES['edit_product_image']) && $_FILES['edit_product_image']['error'] == 0) {
         $upload_dir = '../assets/images/products/';
 
         if (!file_exists($upload_dir)) {
@@ -477,7 +485,34 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
         .image-modal-close:hover { color: #f472b6; }
         .product-image-cell { width: 60px; height: 60px; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, #fdf2f8, #fce7f3); display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .product-image-cell img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease; }
-        .product-image-cell:hover img { transform: scale(1.1); }
+         .product-image-cell:hover img { transform: scale(1.1); }
+
+         /* Image Remove Button */
+         .image-preview { position: relative; }
+         .current-image { position: relative; }
+         .remove-image-btn {
+             position: absolute;
+             top: 8px;
+             right: 8px;
+             width: 28px;
+             height: 28px;
+             background: #ef4444;
+             color: white;
+             border: none;
+             border-radius: 50%;
+             cursor: pointer;
+             font-weight: bold;
+             font-size: 14px;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             transition: all 0.2s;
+             z-index: 10;
+         }
+         .remove-image-btn:hover {
+             background: #dc2626;
+             transform: scale(1.1);
+         }
 
         /* Variations UI */
 .variations-section { margin-top: 0; }
@@ -673,6 +708,7 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
                     <div class="text" style="font-size: 12px; color: #94a3b8;">JPG, PNG, GIF, or WEBP</div>
                 </label>
                 <div class="image-preview" id="add_preview_container" style="display: none;">
+                    <button type="button" class="remove-image-btn" onclick="removeAddImage()">×</button>
                     <img id="add_preview_img" src="" alt="Preview">
                     <div class="file-name" id="add_file_name"></div>
                 </div>
@@ -758,12 +794,15 @@ $out_of_stock = $conn->query("SELECT COUNT(*) as total FROM products WHERE stock
                     <div class="text" style="font-size: 12px; color: #94a3b8;">JPG, PNG, GIF, or WEBP</div>
                 </label>
                 <div class="image-preview" id="edit_preview_container" style="display: none;">
+                    <button type="button" class="remove-image-btn" onclick="removeEditPreviewImage()">×</button>
                     <img id="edit_preview_img" src="" alt="Preview">
                     <div class="file-name" id="edit_file_name"></div>
                 </div>
                 <div class="current-image" id="current_image_container" style="display:none; margin-top: 10px;">
+                    <button type="button" class="remove-image-btn" onclick="removeCurrentImage()" title="Remove existing image">×</button>
                     <span>Current image:</span>
                     <img id="current_image_preview" src="" alt="Current Image" style="max-width: 100px; max-height: 80px; border-radius: 8px; margin-top: 8px; display: block;">
+                    <input type="hidden" name="remove_current_image" id="remove_current_image" value="0">
                 </div>
             </div>
             <div class="form-group">
@@ -935,6 +974,26 @@ function previewEditImage(input) {
         }
         reader.readAsDataURL(input.files[0]);
     }
+}
+
+// Remove image functions
+function removeAddImage() {
+    document.getElementById('add_preview_container').style.display = 'none';
+    document.querySelector('input[name="product_image"]').value = '';
+    document.getElementById('add_preview_img').src = '';
+    document.getElementById('add_file_name').textContent = '';
+}
+
+function removeEditPreviewImage() {
+    document.getElementById('edit_preview_container').style.display = 'none';
+    document.getElementById('edit_product_image').value = '';
+    document.getElementById('edit_preview_img').src = '';
+    document.getElementById('edit_file_name').textContent = '';
+}
+
+function removeCurrentImage() {
+    document.getElementById('current_image_container').style.display = 'none';
+    document.getElementById('remove_current_image').value = '1';
 }
 
 function editProduct(product) {

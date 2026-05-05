@@ -1,0 +1,6 @@
+- [x] Implement sidebar number badges for notifications (Reservations pending for admin/user, Cart count for users)
+- [x] Add API endpoint in api_data.php to return sidebar counts (pending_reservations, cart_items)
+- [x] Update assets/js/script.js to fetch counts and render/update <span class="sidebar-badge"> on matching sidebar links
+- [x] Ensure badge logic: show number only when count > 0 (no "!" variant)
+- [x] Verify on admin/dashboard.php and user/dashboard.php (and other pages with duplicated sidebar) that badges appear and update
+- [ ] Optional cleanup: make dashboard pages use sidebar rendering helper to avoid duplication

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -12,7 +12,8 @@ $columns_to_add = [
     'last_updated_by' => 'INT DEFAULT NULL',
     'last_updated_by_role' => "ENUM(\"admin\", \"customer\") DEFAULT NULL",
     'last_updated_at' => 'TIMESTAMP NULL DEFAULT NULL',
-    'pickup_date' => 'DATE DEFAULT NULL'
+    'pickup_date' => 'DATE DEFAULT NULL',
+    'cancellation_reason' => 'TEXT NULL'
 ];
 
 foreach ($columns_to_add as $col_name => $col_def) {
@@ -26,10 +27,34 @@ foreach ($columns_to_add as $col_name => $col_def) {
 
 // Handle status update
 if (isset($_POST['update_status'])) {
-    $id = $_POST['reservation_id'];
+    $id = (int)$_POST['reservation_id'];
     $status = $_POST['status'];
-    $conn->query("UPDATE reservations SET status='$status', last_updated_by=" . (int)$_SESSION['user_id'] . ", last_updated_by_role='admin', last_updated_at=NOW() WHERE id=$id");
-    $success = "✓ Reservation status updated successfully!";
+    $cancellation_reason = trim($_POST['cancellation_reason'] ?? '');
+    $reservation = $conn->query("SELECT * FROM reservations WHERE id=$id")->fetch_assoc();
+
+    if (!in_array($status, ['pending', 'confirmed', 'completed', 'cancelled'])) {
+        $success = "Invalid reservation status.";
+    } elseif ($status === 'cancelled' && $cancellation_reason === '') {
+        $success = "Cancellation reason is required when cancelling a reservation.";
+    } elseif ($reservation) {
+        if ($status === 'cancelled' && in_array($reservation['status'], ['pending', 'confirmed'])) {
+            $product_check = $conn->query("SELECT id FROM products WHERE id = {$reservation['product_id']}");
+            if ($product_check->num_rows > 0) {
+                $conn->query("UPDATE products SET stock = stock + {$reservation['quantity']} WHERE id = {$reservation['product_id']}");
+            }
+        }
+
+        $reason_sql = '';
+        if ($status === 'cancelled') {
+            $reason = $conn->real_escape_string($cancellation_reason);
+            $reason_sql = ", cancellation_reason='$reason'";
+        }
+
+        $conn->query("UPDATE reservations SET status='$status', last_updated_by=" . (int)$_SESSION['user_id'] . ", last_updated_by_role='admin', last_updated_at=NOW()$reason_sql WHERE id=$id");
+        $success = "✓ Reservation status updated successfully!";
+    } else {
+        $success = "Reservation not found.";
+    }
 }
 
 // Handle delete
@@ -122,6 +147,8 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
         
         .price-col { font-weight: 700; color: #7c3aed; font-size: 15px; }
         .notes-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; font-size: 13px; }
+        .cancel-reason { max-width: 220px; color: #991b1b; font-size: 12px; line-height: 1.4; }
+        .cancel-reason strong { display: block; color: #dc2626; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
     </style>
 </head>
 <body>
@@ -196,6 +223,7 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
                         <th>Total</th>
                         <th>Pickup Date</th>
                         <th>Status</th>
+                        <th>Note</th>
                         <th>Last Updated</th>
                         <th>Action</th>
                     </tr>
@@ -232,6 +260,15 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
                                 </span>
                             </td>
                             <td>
+                                <?php if ($row['status'] === 'cancelled' && !empty($row['cancellation_reason'])): ?>
+                                    <div class="cancel-reason" title="<?php echo htmlspecialchars($row['cancellation_reason']); ?>">
+                                        <?php echo htmlspecialchars($row['cancellation_reason']); ?>
+                                    </div>
+                                <?php else: ?>
+                                    <span style="color: #94a3b8; font-size: 12px;">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
                                 <?php if (!empty($row['last_updated_by_role'])): ?>
                                     <div style="font-size: 12px; color: #64748b;">
                                         <?php if ($row['last_updated_by_role'] === 'admin'): ?>
@@ -250,7 +287,8 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
                             <td>
                                 <form method="POST" style="display:inline;">
                                     <input type="hidden" name="reservation_id" value="<?php echo $row['id']; ?>">
-                                    <select name="status" onchange="this.form.submit()" style="padding: 6px 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; <?php echo $row['status'] == 'cancelled' ? 'opacity: 0.5;' : ''; ?>" <?php echo $row['status'] == 'cancelled' ? 'disabled' : ''; ?>>
+                                    <input type="hidden" name="cancellation_reason" value="">
+                                    <select name="status" data-current-status="<?php echo htmlspecialchars($row['status']); ?>" onchange="handleStatusChange(this)" style="padding: 6px 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; <?php echo $row['status'] == 'cancelled' ? 'opacity: 0.5;' : ''; ?>" <?php echo $row['status'] == 'cancelled' ? 'disabled' : ''; ?>>
                                         <option value="pending" <?php echo $row['status'] == 'pending' ? 'selected' : ''; ?>>Pending</option>
                                         <option value="confirmed" <?php echo $row['status'] == 'confirmed' ? 'selected' : ''; ?>>Confirmed</option>
                                         <option value="completed" <?php echo $row['status'] == 'completed' ? 'selected' : ''; ?>>Completed</option>
@@ -267,5 +305,29 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
     </div>
 </div>
 
+<script>
+function handleStatusChange(select) {
+    const form = select.form;
+    const previousStatus = select.dataset.currentStatus;
+    const reasonInput = form.querySelector('input[name="cancellation_reason"]');
+
+    if (select.value === 'cancelled') {
+        const reason = prompt('Enter the reason for cancelling this reservation:');
+        if (!reason || !reason.trim()) {
+            alert('Cancellation reason is required.');
+            select.value = previousStatus;
+            return;
+        }
+
+        reasonInput.value = reason.trim();
+    } else {
+        reasonInput.value = '';
+    }
+
+    form.submit();
+}
+</script>
+
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

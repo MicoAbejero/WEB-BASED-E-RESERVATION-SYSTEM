@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -509,5 +509,6 @@ document.addEventListener('click', function(event) {
 });
 </script>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -1315,5 +1315,6 @@ function renderEditTempVariations() {
     <img class="image-modal-content" id="modalImage" src="" alt="Product Image">
 </div>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

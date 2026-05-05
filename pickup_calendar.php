@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -1006,5 +1006,6 @@ document.getElementById('limitForm').addEventListener('submit', function(e) {
 });
 </script>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

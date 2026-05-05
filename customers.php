@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -542,5 +542,6 @@ window.onclick = function(event) {
 }
 </script>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

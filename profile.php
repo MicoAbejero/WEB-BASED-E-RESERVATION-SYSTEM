@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 
@@ -369,5 +369,6 @@ if (isset($_POST['change_password'])) {
 
 </div>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

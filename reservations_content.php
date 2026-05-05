@@ -61,6 +61,7 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
                     <th>Pickup Date</th>
                     <th>Status</th>
                     <th>Notes</th>
+                    <th>Note</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -97,9 +98,15 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
                             </div>
                         </td>
                         <td>
+                            <div class="notes-cell" title="<?php echo htmlspecialchars($res['cancellation_reason'] ?? ''); ?>">
+                                <?php echo !empty($res['cancellation_reason']) ? htmlspecialchars($res['cancellation_reason']) : '-'; ?>
+                            </div>
+                        </td>
+                        <td>
                             <form method="POST" style="display:inline;">
                                 <input type="hidden" name="reservation_id" value="<?php echo $res['id']; ?>">
-                                <select name="status" onchange="this.form.submit()" style="padding: 6px 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                                <input type="hidden" name="cancellation_reason" value="">
+                                <select name="status" data-current-status="<?php echo htmlspecialchars($res['status']); ?>" onchange="handleStatusChange(this)" style="padding: 6px 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">
                                     <option value="pending" <?php echo $res['status'] == 'pending' ? 'selected' : ''; ?>>Pending</option>
                                     <option value="confirmed" <?php echo $res['status'] == 'confirmed' ? 'selected' : ''; ?>>Confirmed</option>
                                     <option value="completed" <?php echo $res['status'] == 'completed' ? 'selected' : ''; ?>>Completed</option>
@@ -120,3 +127,26 @@ $cancelled = $conn->query("SELECT COUNT(*) as total FROM reservations WHERE stat
         <p>There are no reservations matching this filter.</p>
     </div>
 <?php endif; ?>
+
+<script>
+function handleStatusChange(select) {
+    const form = select.form;
+    const previousStatus = select.dataset.currentStatus;
+    const reasonInput = form.querySelector('input[name="cancellation_reason"]');
+
+    if (select.value === 'cancelled') {
+        const reason = prompt('Enter the reason for cancelling this reservation:');
+        if (!reason || !reason.trim()) {
+            alert('Cancellation reason is required.');
+            select.value = previousStatus;
+            return;
+        }
+
+        reasonInput.value = reason.trim();
+    } else {
+        reasonInput.value = '';
+    }
+
+    form.submit();
+}
+</script>

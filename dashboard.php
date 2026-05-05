@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -516,5 +516,6 @@ function updateNotificationBadge() {
 setInterval(pollForUpdates, 5000);
 </script>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

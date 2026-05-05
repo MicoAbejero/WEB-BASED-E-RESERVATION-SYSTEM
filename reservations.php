@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -13,7 +13,8 @@ $columns_to_add = [
     'last_updated_by' => 'INT DEFAULT NULL',
     'last_updated_by_role' => "ENUM(\"admin\", \"customer\") DEFAULT NULL",
     'last_updated_at' => 'TIMESTAMP NULL DEFAULT NULL',
-    'pickup_date' => 'DATE DEFAULT NULL'
+    'pickup_date' => 'DATE DEFAULT NULL',
+    'cancellation_reason' => 'TEXT NULL'
 ];
 
 foreach ($columns_to_add as $col_name => $col_def) {
@@ -159,6 +160,19 @@ $cart_count = $conn->query("SELECT SUM(quantity) as total FROM cart WHERE user_i
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
+
+        .cancel-reason-text {
+            margin: 6px 0 0 0;
+            max-width: 420px;
+            color: #991b1b;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .cancel-reason-text strong {
+            color: #dc2626;
+            font-weight: 700;
+        }
         
         .res-actions {
             display: flex;
@@ -297,9 +311,16 @@ $cart_count = $conn->query("SELECT SUM(quantity) as total FROM cart WHERE user_i
                         <div class="res-details">
                             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
                                 <h4><?php echo htmlspecialchars($res['product_name']); ?></h4>
-                                <span class="status-badge status-<?php echo $res['status']; ?>">
-                                    <?php echo ucfirst($res['status']); ?>
-                                </span>
+                                <div>
+                                    <span class="status-badge status-<?php echo $res['status']; ?>">
+                                        <?php echo ucfirst($res['status']); ?>
+                                    </span>
+                                    <?php if ($res['status'] === 'cancelled' && !empty($res['cancellation_reason'])): ?>
+                                        <p class="cancel-reason-text">
+                                            <strong>Note:</strong> <?php echo htmlspecialchars($res['cancellation_reason']); ?>
+                                        </p>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                             
                             <div class="res-meta">
@@ -455,5 +476,6 @@ document.addEventListener('keydown', function(event) {
     <img class="image-modal-content" id="modalImage" src="" alt="Product Image">
 </div>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -337,5 +337,6 @@ function showPickupDetails(dateStr) {
 renderCalendar();
 </script>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>

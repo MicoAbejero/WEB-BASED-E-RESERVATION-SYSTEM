@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 include '../includes/db.php';
 include '../includes/auth.php';
@@ -53,6 +53,9 @@ if (isset($_POST['remove_all'])) {
 if (isset($_POST['checkout'])) {
     $pickup_date = $_POST['pickup_date'] ?? '';
     $notes = isset($_POST['notes']) ? $_POST['notes'] : '';
+    $selected_cart_ids = isset($_POST['selected_cart_ids']) && is_array($_POST['selected_cart_ids'])
+        ? array_values(array_unique(array_filter(array_map('intval', $_POST['selected_cart_ids']))))
+        : [];
     
     // Default to 3 days from now if empty
     if (empty($pickup_date)) {
@@ -66,7 +69,9 @@ if (isset($_POST['checkout'])) {
     }
     
     // Validate pickup date is in the future
-    if (strtotime($pickup_date) < strtotime(date('Y-m-d'))) {
+    if (empty($selected_cart_ids)) {
+        $message = "Please select at least one cart item to reserve.";
+    } elseif (strtotime($pickup_date) < strtotime(date('Y-m-d'))) {
         $message = "Pickup date must be today or in the future.";
     } else {
         // Escape the pickup date for safety
@@ -99,8 +104,10 @@ if (isset($_POST['checkout'])) {
         $current_count = $count_row['total'] ?? 0;
         $count_stmt->close();
         
-        // Get cart count using prepared statement
-        $cart_stmt = $conn->prepare("SELECT COUNT(*) as total FROM cart WHERE user_id = ?");
+        $selected_ids_sql = implode(',', $selected_cart_ids);
+
+        // Get selected cart count using prepared statement
+        $cart_stmt = $conn->prepare("SELECT COUNT(*) as total FROM cart WHERE user_id = ? AND id IN ($selected_ids_sql)");
         $cart_stmt->bind_param("i", $user_id);
         $cart_stmt->execute();
         $cart_result = $cart_stmt->get_result();
@@ -108,7 +115,9 @@ if (isset($_POST['checkout'])) {
         $cart_count_val = $cart_row['total'] ?? 0;
         $cart_stmt->close();
         
-        if ($current_count + $cart_count_val > $max_per_day) {
+        if ($cart_count_val < 1) {
+            $message = "Please select at least one valid cart item to reserve.";
+        } elseif ($current_count + $cart_count_val > $max_per_day) {
             $available = $max_per_day - $current_count;
             if ($available <= 0) {
                 $message = "Sorry! This pickup date is fully booked. Please select a different date.";
@@ -124,7 +133,7 @@ if (isset($_POST['checkout'])) {
             FROM cart c 
             JOIN products p ON c.product_id = p.id
             LEFT JOIN product_variations pv ON c.variation_id = pv.id
-            WHERE c.user_id = ?");
+            WHERE c.user_id = ? AND c.id IN ($selected_ids_sql)");
             $items_stmt->bind_param("i", $user_id);
             $items_stmt->execute();
             $cart_items = $items_stmt->get_result();
@@ -169,8 +178,8 @@ if (isset($_POST['checkout'])) {
                         $stock_stmt->close();
                     }
                     
-                    // Clear cart using prepared statement
-                    $delete_stmt = $conn->prepare("DELETE FROM cart WHERE user_id = ?");
+                    // Clear only reserved cart items using prepared statement
+                    $delete_stmt = $conn->prepare("DELETE FROM cart WHERE user_id = ? AND id IN ($selected_ids_sql)");
                     $delete_stmt->bind_param("i", $user_id);
                     $delete_stmt->execute();
                     $delete_stmt->close();
@@ -265,8 +274,14 @@ $default_pickup_date = date('Y-m-d', strtotime('+3 days'));
         .cart-items { background: white; border-radius: 20px; padding: 28px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06); border: 1px solid rgba(226, 232, 240, 0.6); }
         .cart-items h3 { margin: 0 0 24px 0; color: #1e293b; font-size: 20px; font-weight: 700; }
         .cart-item { display: flex; gap: 24px; padding: 24px; border-bottom: 1px solid #f1f5f9; transition: all 0.2s ease; border-radius: 12px; margin-bottom: 12px; }
+        .cart-item.selected { background: linear-gradient(90deg, #fdf2f8 0%, #faf5ff 100%); }
         .cart-item:last-child { border-bottom: none; margin-bottom: 0; }
         .cart-item:hover { background: linear-gradient(90deg, #fdf2f8 0%, #faf5ff 100%); }
+        .item-select { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .cart-select-checkbox { width: 20px; height: 20px; accent-color: #f472b6; cursor: pointer; }
+        .select-all-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; }
+        .select-all-label { display: flex; align-items: center; gap: 10px; color: #334155; font-weight: 700; cursor: pointer; }
+        .selected-count { color: #64748b; font-size: 13px; font-weight: 600; }
         .item-image { width: 120px; height: 120px; background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #fbcfe8 100%); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 60px; flex-shrink: 0; }
         .item-details { flex: 1; display: flex; flex-direction: column; gap: 8px; }
         .item-details h4 { margin: 0; color: #1e293b; font-size: 18px; font-weight: 700; }
@@ -370,7 +385,7 @@ $default_pickup_date = date('Y-m-d', strtotime('+3 days'));
         .pickup-legend-near-full { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 1px solid #f59e0b; }
         .pickup-legend-full { background: linear-gradient(135deg, #fee2e2, #fecaca); border: 1px solid #ef4444; }
         @media (max-width: 1024px) { .cart-container { grid-template-columns: 1fr; } .checkout-section { position: static; } }
-        @media (max-width: 600px) { .cart-item { flex-direction: column; align-items: center; text-align: center; } .item-image { width: 100px; height: 100px; } .item-actions { width: 100%; align-items: center; } .quantity-form { flex-direction: column; width: 100%; } .quantity-form input { width: 100%; } .btn-update, .btn-remove { width: 100%; } }
+        @media (max-width: 600px) { .cart-item { flex-direction: column; align-items: center; text-align: center; } .item-select { align-self: flex-start; } .select-all-row { flex-direction: column; align-items: flex-start; } .item-image { width: 100px; height: 100px; } .item-actions { width: 100%; align-items: center; } .quantity-form { flex-direction: column; width: 100%; } .quantity-form input { width: 100%; } .btn-update, .btn-remove { width: 100%; } }
     </style>
 </head>
 <body>
@@ -446,8 +461,18 @@ $default_pickup_date = date('Y-m-d', strtotime('+3 days'));
                             <button type="submit" name="remove_all" class="btn-remove-all">🗑️ Remove All</button>
                         </form>
                     </div>
+                    <div class="select-all-row">
+                        <label class="select-all-label">
+                            <input type="checkbox" id="selectAllCartItems" class="cart-select-checkbox" checked>
+                            <span>Select all items for checkout</span>
+                        </label>
+                        <span class="selected-count" id="selectedCountText"><?php echo $item_count; ?> selected</span>
+                    </div>
                     <?php foreach ($cart_data as $item): ?>
-                        <div class="cart-item">
+                        <div class="cart-item selected" data-cart-id="<?php echo (int)$item['id']; ?>" data-subtotal="<?php echo htmlspecialchars((string)$item['subtotal']); ?>">
+                            <div class="item-select">
+                                <input type="checkbox" class="cart-select-checkbox cart-item-checkbox" name="selected_cart_ids[]" value="<?php echo (int)$item['id']; ?>" form="checkoutForm" checked aria-label="Select <?php echo htmlspecialchars($item['name']); ?> for checkout">
+                            </div>
                             <div class="item-image">
                                 <?php if (!empty($item['image'])): ?>
                                     <img src="../<?php echo htmlspecialchars($item['image']); ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:16px;">
@@ -483,9 +508,9 @@ $default_pickup_date = date('Y-m-d', strtotime('+3 days'));
 
                 <div class="checkout-section">
                     <h3>📋 Order Summary</h3>
-                    <div class="summary-row"><span>Items (<?php echo $item_count; ?>)</span><span>₱<?php echo number_format($total, 2); ?></span></div>
+                    <div class="summary-row"><span>Selected Items (<span id="selectedItemsCount"><?php echo $item_count; ?></span>)</span><span id="selectedSubtotal">₱<?php echo number_format($total, 2); ?></span></div>
                     <div class="summary-row"><span>Reservation Fee</span><span>₱0.00</span></div>
-                    <div class="summary-row total"><span>Total</span><span>₱<?php echo number_format($total, 2); ?></span></div>
+                    <div class="summary-row total"><span>Total</span><span id="selectedTotal">₱<?php echo number_format($total, 2); ?></span></div>
 
                     <form method="POST" class="checkout-form" id="checkoutForm">
                         <div class="pickup-date-section">
@@ -542,6 +567,58 @@ const defaultMax = <?php echo $default_max; ?>;
 let pickupMonth = new Date().getMonth();
 let pickupYear = new Date().getFullYear();
 let selectedPickupDate = "<?php echo htmlspecialchars($default_pickup_date); ?>";
+let selectedDateIsFull = false;
+
+function formatPeso(amount) {
+    return '₱' + Number(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function updateCheckoutSelection() {
+    const itemCheckboxes = Array.from(document.querySelectorAll('.cart-item-checkbox'));
+    const selectedCheckboxes = itemCheckboxes.filter(checkbox => checkbox.checked);
+    const selectedCount = selectedCheckboxes.length;
+    const selectedTotal = selectedCheckboxes.reduce((sum, checkbox) => {
+        const cartItem = checkbox.closest('.cart-item');
+        return sum + Number(cartItem ? cartItem.dataset.subtotal : 0);
+    }, 0);
+
+    itemCheckboxes.forEach(checkbox => {
+        const cartItem = checkbox.closest('.cart-item');
+        if (cartItem) {
+            cartItem.classList.toggle('selected', checkbox.checked);
+        }
+    });
+
+    const selectAll = document.getElementById('selectAllCartItems');
+    if (selectAll) {
+        selectAll.checked = selectedCount === itemCheckboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < itemCheckboxes.length;
+    }
+
+    const selectedItemsCount = document.getElementById('selectedItemsCount');
+    const selectedSubtotal = document.getElementById('selectedSubtotal');
+    const selectedTotalEl = document.getElementById('selectedTotal');
+    const selectedCountText = document.getElementById('selectedCountText');
+
+    if (selectedItemsCount) selectedItemsCount.textContent = selectedCount;
+    if (selectedSubtotal) selectedSubtotal.textContent = formatPeso(selectedTotal);
+    if (selectedTotalEl) selectedTotalEl.textContent = formatPeso(selectedTotal);
+    if (selectedCountText) selectedCountText.textContent = `${selectedCount} selected`;
+
+    const btn = document.getElementById('checkoutBtn');
+    if (!btn) return;
+
+    if (selectedCount < 1) {
+        btn.disabled = true;
+        btn.textContent = 'Select items to reserve';
+    } else if (selectedDateIsFull) {
+        btn.disabled = true;
+        btn.textContent = '🚫 Date Fully Booked';
+    } else {
+        btn.disabled = false;
+        btn.textContent = '✓ Reserve Now';
+    }
+}
 
 function getMaxForDate(dateStr) { return dateSettings[dateStr] || defaultMax; }
 
@@ -638,22 +715,45 @@ function selectPickupDate(dateStr) {
     statusEl.textContent = avail.status === 'full' ? '❌ Fully Booked' : (avail.status === 'near-full' ? `⚠️ Only ${avail.remaining} slot(s) available` : `✅ ${avail.remaining} slots available`);
     
     renderPickupCalendar();
-    
-    const btn = document.getElementById('checkoutBtn');
-    btn.disabled = avail.status === 'full';
-    btn.textContent = avail.status === 'full' ? '🚫 Date Fully Booked' : '✓ Reserve Now';
+
+    selectedDateIsFull = avail.status === 'full';
+    updateCheckoutSelection();
+}
+
+const selectAllCartItems = document.getElementById('selectAllCartItems');
+if (selectAllCartItems) {
+    selectAllCartItems.addEventListener('change', () => {
+        document.querySelectorAll('.cart-item-checkbox').forEach(checkbox => {
+            checkbox.checked = selectAllCartItems.checked;
+        });
+        updateCheckoutSelection();
+    });
+}
+
+document.querySelectorAll('.cart-item-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', updateCheckoutSelection);
+});
+
+const checkoutForm = document.getElementById('checkoutForm');
+if (checkoutForm) {
+    checkoutForm.addEventListener('submit', function(event) {
+        if (!document.querySelector('.cart-item-checkbox:checked')) {
+            event.preventDefault();
+            alert('Please select at least one cart item to reserve.');
+        }
+    });
 }
 
 renderPickupCalendar();
 
 // Initialize button state properly on page load
 const initialAvail = getAvailabilityStatus(selectedPickupDate);
-const initialBtn = document.getElementById('checkoutBtn');
-initialBtn.disabled = initialAvail.status === 'full';
-initialBtn.textContent = initialAvail.status === 'full' ? '🚫 Date Fully Booked' : '✓ Reserve Now';
+selectedDateIsFull = initialAvail.status === 'full';
 
 selectPickupDate(selectedPickupDate);
+updateCheckoutSelection();
 </script>
 
+<script src="../assets/js/script.js"></script>
 </body>
 </html>
